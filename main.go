@@ -20,6 +20,8 @@ func main() {
 		maxParallel int
 		tail        int
 		failFast    bool
+		verbose     bool
+		name        string
 	)
 
 	flag.IntVar(&maxParallel, "max-parallel", 4, "Max number of concurrent processes")
@@ -27,6 +29,9 @@ func main() {
 	flag.IntVar(&tail, "tail", 10, "Number of output lines shown per process in the status board")
 	flag.IntVar(&tail, "n", 10, "Number of output lines shown per process (shorthand)")
 	flag.BoolVar(&failFast, "fail-fast", false, "Kill all running processes when one exits non-zero")
+	flag.BoolVar(&verbose, "verbose", false, "Print full output for all runners, not just failures")
+	flag.BoolVar(&verbose, "v", false, "Print full output for all runners (shorthand)")
+	flag.StringVar(&name, "name", "spex", "Label shown in the status header")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: spex [flags] <<EOF\n")
 		fmt.Fprintf(os.Stderr, "  name1<TAB>command1\n")
@@ -85,15 +90,15 @@ func main() {
 	start := time.Now()
 
 	if isTTY && !noColor {
-		runTUI(runners, maxParallel, failFast, nameWidth, start)
+		runTUI(runners, maxParallel, failFast, verbose, name, tail, nameWidth, start)
 	} else {
-		runCI(runners, maxParallel, failFast, noColor, nameWidth, start)
+		runCI(runners, maxParallel, failFast, verbose, noColor, name, nameWidth, start)
 	}
 }
 
 // runCI runs the CI (non-TTY) path: plain line-by-line stderr output.
-func runCI(runners []*Runner, maxParallel int, failFast bool, noColor bool, nameWidth int, start time.Time) {
-	renderer := NewCIRenderer(nameWidth, noColor)
+func runCI(runners []*Runner, maxParallel int, failFast bool, verbose bool, noColor bool, name string, nameWidth int, start time.Time) {
+	renderer := NewCIRenderer(nameWidth, noColor, verbose)
 	sem := make(chan struct{}, maxParallel)
 	doneCh := make(chan *RunnerState, len(runners))
 
@@ -176,12 +181,12 @@ loop:
 
 	elapsed := time.Since(start)
 	renderer.Summary(runners, elapsed)
-	WriteJSON(runners, elapsed)
+	WriteJSON(runners, elapsed, verbose)
 	exitWithCode(runners, signalReceived)
 }
 
 // runTUI runs the interactive TUI path using bubbletea.
-func runTUI(runners []*Runner, maxParallel int, failFast bool, nameWidth int, start time.Time) {
+func runTUI(runners []*Runner, maxParallel int, failFast bool, verbose bool, name string, tail int, nameWidth int, start time.Time) {
 	var (
 		cancelled bool
 		cancelMu  sync.Mutex
@@ -197,7 +202,7 @@ func runTUI(runners []*Runner, maxParallel int, failFast bool, nameWidth int, st
 		return cancelled
 	}
 
-	model := NewModel(runners, failFast, nameWidth, cancel, start)
+	model := NewModel(runners, failFast, name, tail, nameWidth, cancel, start)
 
 	// When stdin is consumed (piped runner list), bubbletea needs /dev/tty for
 	// raw-mode setup and keyboard events.
@@ -281,8 +286,8 @@ func runTUI(runners []*Runner, maxParallel int, failFast bool, nameWidth int, st
 	wg.Wait()
 
 	elapsed := time.Since(start)
-	PrintFinalSummary(runners, elapsed, nameWidth)
-	WriteJSON(runners, elapsed)
+	PrintFinalSummary(runners, elapsed, name, nameWidth, verbose)
+	WriteJSON(runners, elapsed, verbose)
 	exitWithCode(runners, signalReceived)
 }
 

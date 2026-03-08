@@ -38,7 +38,7 @@ func formatDuration(d time.Duration) string {
 
 // WriteJSON marshals the final run summary to stdout.
 // Must be called only after all runner goroutines have exited.
-func WriteJSON(runners []*Runner, totalDuration time.Duration) {
+func WriteJSON(runners []*Runner, totalDuration time.Duration, verbose bool) {
 	out := outputJSON{
 		Ok:      true,
 		Duration: formatDuration(totalDuration),
@@ -54,11 +54,11 @@ func WriteJSON(runners []*Runner, totalDuration time.Duration) {
 		}
 
 		var outputStr string
-		if !ok && len(state.FullOutput) > 0 {
-			// Full output for failed/killed runners.
-			outputStr = strings.Join(state.FullOutput, "\n")
+		if !ok || verbose {
+			if len(state.FullOutput) > 0 {
+				outputStr = strings.Join(state.FullOutput, "\n")
+			}
 		} else if lines := state.Output.Lines(); len(lines) > 0 {
-			// Last N lines for successful runners.
 			outputStr = strings.Join(lines, "\n")
 		}
 

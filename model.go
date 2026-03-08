@@ -53,7 +53,9 @@ var (
 // Model is the bubbletea model for the live TUI status board.
 type Model struct {
 	runners   []*Runner
+	name      string
 	nameWidth int
+	tail      int
 	failFast  bool
 	cancelFn  func() // shared cancel function from the outer goroutine scope
 
@@ -65,9 +67,11 @@ type Model struct {
 	start        time.Time
 }
 
-func NewModel(runners []*Runner, failFast bool, nameWidth int, cancelFn func(), start time.Time) Model {
+func NewModel(runners []*Runner, failFast bool, name string, tail int, nameWidth int, cancelFn func(), start time.Time) Model {
 	return Model{
 		runners:   runners,
+		name:      name,
+		tail:      tail,
 		nameWidth: nameWidth,
 		failFast:  failFast,
 		cancelFn:  cancelFn,
@@ -161,7 +165,7 @@ func (m Model) View() string {
 	total := len(m.runners)
 
 	// Header line.
-	header := styleHeader.Render("spex") + fmt.Sprintf("  %d/%d done", done, total)
+	header := styleHeader.Render(m.name) + fmt.Sprintf("  %d/%d done", done, total)
 	if running > 0 {
 		header += fmt.Sprintf(" • %d running", running)
 	}
@@ -206,8 +210,12 @@ func (m Model) View() string {
 			if maxLen < 10 {
 				maxLen = 10
 			}
-			for _, line := range r.State.Output.Lines() {
+			lines := r.State.Output.Lines()
+			for _, line := range lines {
 				sb.WriteString(styleTail.Render("    ↳ "+truncate(line, maxLen)) + "\n")
+			}
+			for range m.tail - len(lines) {
+				sb.WriteString(styleTail.Render("    ↳") + "\n")
 			}
 
 		case StatusDone, StatusError:
@@ -232,10 +240,10 @@ func (m Model) View() string {
 
 // PrintFinalSummary writes the end-of-run summary to stderr.
 // Must be called after the bubbletea program has exited (all goroutines done).
-func PrintFinalSummary(runners []*Runner, elapsed time.Duration, nameWidth int) {
+func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, nameWidth int, verbose bool) {
 	total := len(runners)
 	fmt.Fprintf(os.Stderr, "%s  %d/%d done in %s\n\n",
-		styleHeader.Render("spex"), total, total, formatDuration(elapsed))
+		styleHeader.Render(name), total, total, formatDuration(elapsed))
 
 	var failed []*RunnerState
 	for _, r := range runners {
@@ -268,16 +276,26 @@ func PrintFinalSummary(runners []*Runner, elapsed time.Duration, nameWidth int) 
 		}
 	}
 
-	for _, state := range failed {
+	printOutput := func(state *RunnerState) {
 		state.mu.Lock()
 		output := state.FullOutput
 		state.mu.Unlock()
 		if len(output) == 0 {
-			continue
+			return
 		}
 		fmt.Fprintf(os.Stderr, "\n--- %s output ---\n", state.Name)
 		fmt.Fprintln(os.Stderr, strings.Join(output, "\n"))
 		fmt.Fprintln(os.Stderr, "---")
+	}
+
+	if verbose {
+		for _, r := range runners {
+			printOutput(r.State)
+		}
+	} else {
+		for _, state := range failed {
+			printOutput(state)
+		}
 	}
 }
 

@@ -13,11 +13,12 @@ import (
 type CIRenderer struct {
 	mu        sync.Mutex
 	noColor   bool
+	verbose   bool
 	nameWidth int
 }
 
-func NewCIRenderer(nameWidth int, noColor bool) *CIRenderer {
-	return &CIRenderer{nameWidth: nameWidth, noColor: noColor}
+func NewCIRenderer(nameWidth int, noColor bool, verbose bool) *CIRenderer {
+	return &CIRenderer{nameWidth: nameWidth, noColor: noColor, verbose: verbose}
 }
 
 func (r *CIRenderer) OnStart(state *RunnerState) {
@@ -39,6 +40,14 @@ func (r *CIRenderer) OnDone(state *RunnerState) {
 			fmt.Fprintf(os.Stderr, "[%-*s] done in %s\n", r.nameWidth, state.Name, dur)
 		} else {
 			fmt.Fprintf(os.Stderr, "[%-*s] \u2713 done in %s\n", r.nameWidth, state.Name, dur)
+		}
+		if r.verbose {
+			output := state.FullOutput
+			if len(output) > 0 {
+				fmt.Fprintf(os.Stderr, "\n--- %s output ---\n", state.Name)
+				fmt.Fprintln(os.Stderr, strings.Join(output, "\n"))
+				fmt.Fprintln(os.Stderr, "---\n")
+			}
 		}
 		return
 	}
