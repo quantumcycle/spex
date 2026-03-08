@@ -27,7 +27,20 @@ func main() {
 	flag.IntVar(&tail, "tail", 10, "Number of output lines shown per process in the status board")
 	flag.IntVar(&tail, "n", 10, "Number of output lines shown per process (shorthand)")
 	flag.BoolVar(&failFast, "fail-fast", false, "Kill all running processes when one exits non-zero")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: spex [flags] <<EOF\n")
+		fmt.Fprintf(os.Stderr, "  name1<TAB>command1\n")
+		fmt.Fprintf(os.Stderr, "  name2<TAB>command2\n")
+		fmt.Fprintf(os.Stderr, "EOF\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	// Read name<TAB>cmd pairs from stdin.
 	var runners []*Runner
