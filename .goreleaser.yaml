@@ -1,0 +1,31 @@
+version: 2
+
+project_name: spex
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.sha256.txt"
+  algorithm: sha256
+
+release:
+  draft: false
+  prerelease: auto
