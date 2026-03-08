@@ -40,14 +40,16 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-// lipgloss styles (package-level; safe to share across goroutines).
+// lipgloss renderer and styles, all backed by stderr so that color capability
+// is detected against the TUI output stream rather than stdout.
 var (
-	styleHeader  = lipgloss.NewStyle().Bold(true)
-	stylePending = lipgloss.NewStyle().Faint(true)
-	styleSpinner = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // amber
-	styleSuccess = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))  // green
-	styleError   = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
-	styleTail    = lipgloss.NewStyle().Faint(true)
+	stderrRenderer = lipgloss.NewRenderer(os.Stderr)
+	styleHeader    = stderrRenderer.NewStyle().Bold(true)
+	stylePending   = stderrRenderer.NewStyle().Faint(true)
+	styleSpinner   = stderrRenderer.NewStyle().Foreground(lipgloss.Color("214")) // amber
+	styleSuccess   = stderrRenderer.NewStyle().Foreground(lipgloss.Color("82"))  // green
+	styleError     = stderrRenderer.NewStyle().Foreground(lipgloss.Color("196")) // red
+	styleTail      = stderrRenderer.NewStyle().Faint(true)
 )
 
 // Model is the bubbletea model for the live TUI status board.

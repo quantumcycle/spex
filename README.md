@@ -2,6 +2,24 @@
 
 A generic parallel process runner with a live terminal UI. Runs N shell commands in parallel, shows live output tails per process, and reports structured JSON results.
 
+## Demo
+
+Run the included demo to see spex in action with 8 simulated services (~13 seconds, one intentional failure):
+
+```bash
+./demo.sh
+```
+
+This runs 8 services with `--max-parallel 4`. One service (`mailer`) exits non-zero on purpose to demonstrate failure handling.
+
+Early in the run, all processes are shown with their live log tails:
+
+![Early run](docs/img1.png)
+
+As processes complete they are bumped to the top, with failed ones marked in red:
+
+![Mid run](docs/img2.png)
+
 ## Installation
 
 **Homebrew (macOS):**
@@ -145,13 +163,3 @@ On `SIGINT` or `SIGTERM`:
 3. Force-kill any that remain
 4. Write partial JSON to stdout (unfinished runners marked `"ok": false, "exit_code": null`)
 5. Exit with code 130 (SIGINT) or 143 (SIGTERM)
-
-## Demo
-
-Run the included demo to see spex in action with 8 simulated services (~13 seconds, one intentional failure):
-
-```bash
-./demo.sh
-```
-
-This runs 8 services with `--max-parallel 4`. One service (`mailer`) exits non-zero on purpose to demonstrate failure handling.
