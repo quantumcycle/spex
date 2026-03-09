@@ -57,6 +57,8 @@ while true; do
   done
 
   printf '[%s] %s seq=%04d\n' "$lvl" "$msg" "$seq"
+  # Occasionally emit a trailing blank line to test blank-line suppression.
+  (( RANDOM % 4 == 0 )) && printf '\n'
   seq=$(( seq + 1 ))
   sleep "0.$((RANDOM % 5 + 4))"   # 0.4 – 0.8 s between lines
 done

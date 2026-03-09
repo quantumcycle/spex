@@ -224,7 +224,9 @@ func (r *Runner) Run(onLine func(string), onDone func(*RunnerState)) {
 		for scanner.Scan() {
 			line := scanner.Text()
 			state.mu.Lock()
-			state.Output.Add(line)
+			if strings.TrimSpace(line) != "" {
+				state.Output.Add(line)
+			}
 			state.FullOutput = append(state.FullOutput, line)
 			state.mu.Unlock()
 			if logFile != nil {

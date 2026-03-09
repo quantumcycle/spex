@@ -213,11 +213,11 @@ func (m Model) View() string {
 				maxLen = 10
 			}
 			lines := r.State.Output.Lines()
+			for range m.tail - len(lines) {
+				sb.WriteString("\n")
+			}
 			for _, line := range lines {
 				sb.WriteString(styleTail.Render("    ↳ "+truncate(line, maxLen)) + "\n")
-			}
-			for range m.tail - len(lines) {
-				sb.WriteString(styleTail.Render("    ↳") + "\n")
 			}
 
 		case StatusDone, StatusError:
