@@ -52,9 +52,9 @@ name<TAB>command
 
 ```bash
 spex [flags] <<EOF
-assets      ./.scripts/test-component.sh assets reports/go
-publisher   ./.scripts/test-component.sh publisher reports/go
-users       ./.scripts/test-component.sh users reports/go
+api-server    bash run-service.sh api-server
+auth-service  bash run-service.sh auth-service
+worker-a      bash run-service.sh worker-a
 EOF
 ```
 
@@ -87,14 +87,14 @@ echo "$result" | jq -r '.runners[] | select(.ok) | .name'
   "duration": "2m14s",
   "runners": [
     {
-      "name": "assets",
+      "name": "api-server",
       "ok": true,
       "exit_code": 0,
       "duration": "45s",
       "output": "last N lines of output, always"
     },
     {
-      "name": "publisher",
+      "name": "mailer",
       "ok": false,
       "exit_code": 1,
       "duration": "12s",
@@ -111,17 +111,17 @@ When running in a terminal, spex renders a live status board on stderr:
 ```
 spex  3/8 done • 2 running • 3 pending
 
-  ✓ assets      45s
-  ⠸ publisher   12s
-    ↳ running tests for: publisher
-    ↳ --- PASS: TestCreatePublisher (0.12s)
-    ↳ --- PASS: TestUpdatePublisher (0.08s)
-  ⠸ users       8s
-    ↳ running tests for: users
-    ↳ --- PASS: TestGetUser (0.05s)
-  · reviews     pending
-  · license     pending
-  · media       pending
+  ✓ api-server    45s
+  ⠸ auth-service  12s
+    ↳ [INFO] received request method=GET path=/api/v1/status
+    ↳ [INFO] db query table=events rows=42 latency=120ms
+    ↳ [INFO] cache HIT key=session:456
+  ⠸ worker-a      8s
+    ↳ [INFO] queue depth=15 jobs pending
+    ↳ [DEBUG] goroutine pool size=8 active=3
+  · worker-b      pending
+  · cache-loader  pending
+  · mailer        pending
 ```
 
 Status icons:
@@ -138,14 +138,14 @@ When all processes finish, the board is replaced by a final summary followed by 
 When stdout is not a TTY or `NO_COLOR` is set, spex writes plain lines to stderr as events happen:
 
 ```
-[assets]    starting
-[publisher] starting
-[users]     starting
-[assets]    ✓ done in 45s
-[publisher] ✓ done in 38s
-[users]     ✗ exited 1 in 12s
+[api-server]   starting
+[auth-service] starting
+[mailer]       starting
+[api-server]   ✓ done in 45s
+[auth-service] ✓ done in 38s
+[mailer]       ✗ exited 1 in 12s
 
---- users output ---
+--- mailer output ---
 <full buffered output>
 ---
 
