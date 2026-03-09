@@ -65,6 +65,8 @@ EOF
 | `--max-parallel` / `-p` | `4` | Max number of concurrent processes |
 | `--tail` / `-n` | `10` | Number of log lines shown per process in the status board |
 | `--fail-fast` | `false` | Kill all running processes as soon as one exits non-zero |
+| `--output` / `-o` | `errors` | Comma-separated output tokens: `errors`, `success`, `all`. A single token prints output immediately for that category (`errors` = failures only, `success` = successes only, `all` = everything). Multiple tokens buffer all output and flush in the given order at the end (e.g. `success,errors` prints successes before failures). `all` must appear alone. |
+| `--log-dir` | _(none)_ | Directory for per-runner log files. Each runner writes to `<dir>/<name>-<seed>.log` where the seed is shared across all runners in one invocation. The path appears as `log_file` in JSON output. |
 
 ## Output
 
@@ -76,33 +78,38 @@ This separation lets you capture the JSON without interference from status outpu
 
 ```bash
 result=$(spex --max-parallel 4 < runners.txt)
-echo "$result" | jq -r '.runners[] | select(.ok) | .name'
+echo "$result" | jq -r '.runners[] | select(.success) | .name'
 ```
 
 ### JSON schema
 
 ```json
 {
-  "ok": true,
+  "success": true,
   "duration": "2m14s",
+  "duration_ms": 134000,
   "runners": [
     {
       "name": "api-server",
-      "ok": true,
+      "success": true,
       "exit_code": 0,
       "duration": "45s",
-      "output": "last N lines of output, always"
+      "duration_ms": 45000,
+      "log_file": "/tmp/spex-logs/api-server-6831e410.log"
     },
     {
       "name": "mailer",
-      "ok": false,
+      "success": false,
       "exit_code": 1,
       "duration": "12s",
-      "output": "full output on non-zero exit, last N lines otherwise"
+      "duration_ms": 12000,
+      "log_file": "/tmp/spex-logs/mailer-6831e410.log"
     }
   ]
 }
 ```
+
+`log_file` is omitted when `--log-dir` is not set.
 
 ## Interactive mode (TTY)
 
@@ -131,7 +138,7 @@ Status icons:
 - `✓` exited 0
 - `✗` exited non-zero
 
-When all processes finish, the board is replaced by a final summary followed by the full output of any failed processes. JSON is then written to stdout.
+When all processes finish, the board is replaced by a final summary. Output display is governed by `--output`: `errors` (default) prints output only for failures, `all` prints output for every process, and a token list like `success,errors` buffers and flushes in the given order. JSON is then written to stdout.
 
 ## CI mode (no TTY / `NO_COLOR`)
 
@@ -152,7 +159,7 @@ When stdout is not a TTY or `NO_COLOR` is set, spex writes plain lines to stderr
 3 done, 1 error, 2m14s
 ```
 
-Full output for non-zero exits is printed immediately when that process finishes.
+Output display is governed by `--output` (default `errors`): only failures are shown immediately. Use `--output all` to print output for every process as it finishes, or a token list like `--output success,errors` to buffer all output and flush in the given order at the end.
 
 ## Signal handling
 
@@ -161,5 +168,5 @@ On `SIGINT` or `SIGTERM`:
 1. Forward the signal to all running child processes
 2. Wait up to 5 seconds for them to exit
 3. Force-kill any that remain
-4. Write partial JSON to stdout (unfinished runners marked `"ok": false, "exit_code": null`)
+4. Write partial JSON to stdout (unfinished runners marked `"success": false, "exit_code": null`)
 5. Exit with code 130 (SIGINT) or 143 (SIGTERM)

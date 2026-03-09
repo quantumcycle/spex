@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -81,7 +84,22 @@ type RunnerState struct {
 	FullOutput []string    // all lines (for failed processes)
 	StartedAt  time.Time
 	EndedAt    time.Time
+	LogFile    string // absolute path to log file; empty if --log-dir not set
 	cmd        *exec.Cmd
+}
+
+// safeFilename replaces any character that isn't alphanumeric, '-', or '_' with '_'.
+func safeFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }
 
 // ReadSnapshot returns a consistent snapshot of the time-sensitive fields
@@ -117,15 +135,17 @@ type Runner struct {
 	State *RunnerState
 }
 
-func NewRunner(name, cmd string, tail int) *Runner {
-	return &Runner{
-		State: &RunnerState{
-			Name:   name,
-			Cmd:    cmd,
-			Status: StatusPending,
-			Output: NewRingBuffer(tail),
-		},
+func NewRunner(name, cmd string, tail int, logDir, runSeed string) *Runner {
+	state := &RunnerState{
+		Name:   name,
+		Cmd:    cmd,
+		Status: StatusPending,
+		Output: NewRingBuffer(tail),
 	}
+	if logDir != "" {
+		state.LogFile = filepath.Join(logDir, safeFilename(name)+"-"+runSeed+".log")
+	}
+	return &Runner{State: state}
 }
 
 // Run starts the command, streams output, and invokes callbacks.
@@ -179,11 +199,27 @@ func (r *Runner) Run(onLine func(string), onDone func(*RunnerState)) {
 	// When the child exits the OS closes its copy, giving the reader EOF.
 	pw.Close()
 
+	var logFile *os.File
+	if state.LogFile != "" {
+		f, err := os.Create(state.LogFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cannot create log file %s: %v\n", state.LogFile, err)
+			state.LogFile = ""
+		} else {
+			logFile = f
+		}
+	}
+
 	var scanWg sync.WaitGroup
 	scanWg.Add(1)
 	go func() {
 		defer scanWg.Done()
 		defer pr.Close()
+		defer func() {
+			if logFile != nil {
+				logFile.Close()
+			}
+		}()
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -191,6 +227,9 @@ func (r *Runner) Run(onLine func(string), onDone func(*RunnerState)) {
 			state.Output.Add(line)
 			state.FullOutput = append(state.FullOutput, line)
 			state.mu.Unlock()
+			if logFile != nil {
+				fmt.Fprintln(logFile, line)
+			}
 			if onLine != nil {
 				onLine(line)
 			}

@@ -79,7 +79,7 @@ chmod +x "$HELPER"
 #   t=12  mailer (FAIL) + migrator done
 #   t=13  notifier done                              (≈ 13 s total)
 # ---------------------------------------------------------------------------
-"$SPEX" --name Processes --verbose --max-parallel 4 --tail 3 <<RUNNERS
+"$SPEX" --name Processes --output errors --max-parallel 4 --tail 3 <<RUNNERS
 api-server	bash "$HELPER" 10
 auth-service	bash "$HELPER" 7
 worker-a	bash "$HELPER" 4

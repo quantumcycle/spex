@@ -15,13 +15,40 @@ import (
 	"golang.org/x/term"
 )
 
+// parseOutputTokens splits and validates the --output flag value.
+// Valid tokens: "errors", "success", "all".
+// "all" must appear alone; no token may repeat.
+func parseOutputTokens(s string) ([]string, error) {
+	parts := strings.Split(s, ",")
+	seen := map[string]bool{}
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		switch p {
+		case "errors", "success", "all":
+		default:
+			return nil, fmt.Errorf("unknown token %q: valid tokens are errors, success, all", p)
+		}
+		if seen[p] {
+			return nil, fmt.Errorf("duplicate token %q", p)
+		}
+		seen[p] = true
+		result = append(result, p)
+	}
+	if seen["all"] && len(result) > 1 {
+		return nil, fmt.Errorf(`"all" cannot be combined with other tokens`)
+	}
+	return result, nil
+}
+
 func main() {
 	var (
 		maxParallel int
 		tail        int
 		failFast    bool
-		verbose     bool
+		outputMode  string
 		name        string
+		logDir      string
 	)
 
 	flag.IntVar(&maxParallel, "max-parallel", 4, "Max number of concurrent processes")
@@ -29,9 +56,10 @@ func main() {
 	flag.IntVar(&tail, "tail", 10, "Number of output lines shown per process in the status board")
 	flag.IntVar(&tail, "n", 10, "Number of output lines shown per process (shorthand)")
 	flag.BoolVar(&failFast, "fail-fast", false, "Kill all running processes when one exits non-zero")
-	flag.BoolVar(&verbose, "verbose", false, "Print full output for all runners, not just failures")
-	flag.BoolVar(&verbose, "v", false, "Print full output for all runners (shorthand)")
+	flag.StringVar(&outputMode, "output", "errors", "Output tokens (comma-separated): errors, success, all — single token prints immediately; multiple tokens buffer and flush in order")
+	flag.StringVar(&outputMode, "o", "errors", "Output tokens (shorthand)")
 	flag.StringVar(&name, "name", "spex", "Label shown in the status header")
+	flag.StringVar(&logDir, "log-dir", "", "Directory to write per-runner log files (e.g. /tmp/spex-logs)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: spex [flags] <<EOF\n")
 		fmt.Fprintf(os.Stderr, "  name1<TAB>command1\n")
@@ -41,6 +69,21 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	outputTokens, err := parseOutputTokens(outputMode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid --output value %q: %v\n", outputMode, err)
+		os.Exit(1)
+	}
+
+	var runSeed string
+	if logDir != "" {
+		if err := os.MkdirAll(logDir, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "cannot create log dir %q: %v\n", logDir, err)
+			os.Exit(1)
+		}
+		runSeed = fmt.Sprintf("%x", time.Now().Unix())
+	}
 
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		flag.Usage()
@@ -66,7 +109,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "skipping invalid line (empty name or cmd): %q\n", line)
 			continue
 		}
-		runners = append(runners, NewRunner(name, cmd, tail))
+		runners = append(runners, NewRunner(name, cmd, tail, logDir, runSeed))
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "reading stdin: %v\n", err)
@@ -90,15 +133,15 @@ func main() {
 	start := time.Now()
 
 	if isTTY && !noColor {
-		runTUI(runners, maxParallel, failFast, verbose, name, tail, nameWidth, start)
+		runTUI(runners, maxParallel, failFast, outputTokens, name, tail, nameWidth, start)
 	} else {
-		runCI(runners, maxParallel, failFast, verbose, noColor, name, nameWidth, start)
+		runCI(runners, maxParallel, failFast, outputTokens, noColor, name, nameWidth, start)
 	}
 }
 
 // runCI runs the CI (non-TTY) path: plain line-by-line stderr output.
-func runCI(runners []*Runner, maxParallel int, failFast bool, verbose bool, noColor bool, name string, nameWidth int, start time.Time) {
-	renderer := NewCIRenderer(nameWidth, noColor, verbose)
+func runCI(runners []*Runner, maxParallel int, failFast bool, outputTokens []string, noColor bool, name string, nameWidth int, start time.Time) {
+	renderer := NewCIRenderer(nameWidth, noColor, outputTokens)
 	sem := make(chan struct{}, maxParallel)
 	doneCh := make(chan *RunnerState, len(runners))
 
@@ -126,7 +169,7 @@ func runCI(runners []*Runner, maxParallel int, failFast bool, verbose bool, noCo
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}        // acquire
+			sem <- struct{}{}         // acquire
 			defer func() { <-sem }() // release
 
 			if isCancelled() {
@@ -181,12 +224,12 @@ loop:
 
 	elapsed := time.Since(start)
 	renderer.Summary(runners, elapsed)
-	WriteJSON(runners, elapsed, verbose)
+	WriteJSON(runners, elapsed)
 	exitWithCode(runners, signalReceived)
 }
 
 // runTUI runs the interactive TUI path using bubbletea.
-func runTUI(runners []*Runner, maxParallel int, failFast bool, verbose bool, name string, tail int, nameWidth int, start time.Time) {
+func runTUI(runners []*Runner, maxParallel int, failFast bool, outputTokens []string, name string, tail int, nameWidth int, start time.Time) {
 	var (
 		cancelled bool
 		cancelMu  sync.Mutex
@@ -256,7 +299,7 @@ func runTUI(runners []*Runner, maxParallel int, failFast bool, verbose bool, nam
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}        // acquire
+			sem <- struct{}{}         // acquire
 			defer func() { <-sem }() // release
 
 			if isCancelled() {
@@ -286,8 +329,8 @@ func runTUI(runners []*Runner, maxParallel int, failFast bool, verbose bool, nam
 	wg.Wait()
 
 	elapsed := time.Since(start)
-	PrintFinalSummary(runners, elapsed, name, nameWidth, verbose)
-	WriteJSON(runners, elapsed, verbose)
+	PrintFinalSummary(runners, elapsed, name, nameWidth, outputTokens)
+	WriteJSON(runners, elapsed)
 	exitWithCode(runners, signalReceived)
 }
 

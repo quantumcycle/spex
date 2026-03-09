@@ -242,12 +242,16 @@ func (m Model) View() string {
 
 // PrintFinalSummary writes the end-of-run summary to stderr.
 // Must be called after the bubbletea program has exited (all goroutines done).
-func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, nameWidth int, verbose bool) {
+//
+// outputTokens controls which output is shown:
+//   - Single token ("errors", "success", "all"): show matching category only.
+//   - Multiple tokens (e.g. ["success","errors"]): show in the given order.
+func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, nameWidth int, outputTokens []string) {
 	total := len(runners)
 	fmt.Fprintf(os.Stderr, "%s  %d/%d done in %s\n\n",
 		styleHeader.Render(name), total, total, formatDuration(elapsed))
 
-	var failed []*RunnerState
+	byCategory := map[string][]*RunnerState{"success": {}, "errors": {}}
 	for _, r := range runners {
 		state := r.State
 		_, ec, startedAt, endedAt := state.ReadSnapshot()
@@ -262,6 +266,7 @@ func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, na
 		if ec != nil && *ec == 0 {
 			fmt.Fprintf(os.Stderr, "  %s %-*s  %s\n",
 				styleSuccess.Render("✓"), nameWidth, state.Name, dur)
+			byCategory["success"] = append(byCategory["success"], state)
 		} else {
 			code := -1
 			if ec != nil {
@@ -274,7 +279,7 @@ func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, na
 				fmt.Fprintf(os.Stderr, "  %s %-*s  %s\n",
 					styleError.Render("✗"), nameWidth, state.Name, dur)
 			}
-			failed = append(failed, state)
+			byCategory["errors"] = append(byCategory["errors"], state)
 		}
 	}
 
@@ -282,20 +287,19 @@ func PrintFinalSummary(runners []*Runner, elapsed time.Duration, name string, na
 		state.mu.Lock()
 		output := state.FullOutput
 		state.mu.Unlock()
-		if len(output) == 0 {
-			return
-		}
-		fmt.Fprintf(os.Stderr, "\n--- %s output ---\n", state.Name)
-		fmt.Fprintln(os.Stderr, strings.Join(output, "\n"))
-		fmt.Fprintln(os.Stderr, "---")
+		printOutputBlock(os.Stderr, state.Name, output)
 	}
 
-	if verbose {
+	if len(outputTokens) == 1 && outputTokens[0] == "all" {
 		for _, r := range runners {
 			printOutput(r.State)
 		}
-	} else {
-		for _, state := range failed {
+		return
+	}
+
+	// Single token or multi-token: iterate tokens in order and print matching states.
+	for _, token := range outputTokens {
+		for _, state := range byCategory[token] {
 			printOutput(state)
 		}
 	}
